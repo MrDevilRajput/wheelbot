@@ -1,1 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Wheel of Fortune</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif;
+      background: url('/static/bg-blur.jpg') center/cover no-repeat; color:#fff;
+      display:flex; min-height:100vh; align-items:center; justify-content:center; flex-direction:column;}
+    .container { text-align:center; max-width:900px; padding:20px;}
+    #wheelCanvas { width:500px; height:500px; margin:auto; display:block; }
+    .btn { margin-top:18px; padding:12px 22px; border-radius:12px; background:#222;color:#fff;border:none; cursor:pointer; font-size:18px; }
+    .resultBox { margin-top:18px; background:rgba(0,0,0,0.45); padding:14px;border-radius:10px; display:none; }
+    .bottom-note { margin-top:28px; font-size:14px; opacity:0.95; color:#eee; }
+    .popup { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:#111; color:#fff; padding:28px; border-radius:16px; box-shadow:0 20px 50px rgba(0,0,0,0.6); text-align:center; display:none; z-index:9999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎡 Wheel of Fortune</h1>
+    <canvas id="wheelCanvas" width="500" height="500"></canvas>
+    <div><button id="spinBtn" class="btn">Spin the wheel</button></div>
+    <div id="resultBox" class="resultBox"></div>
+
+    <div class="bottom-note">
+      My client wants this telegram bot how can I create this with very easy way. <br>
+      •T•T 🎡 ג•ל•ג•ל — לנשמה☘️: <br>
+      📨 Your request has been sent to the administrators!<br>
+      We will notify you when the request is approved. ⏳<br>
+      🎉 Your request has been approved! Now you can enter the wheel of fortune! 🍀<br>
+      Click the button below to start.
+    </div>
+  </div>
+
+  <div id="popup" class="popup">
+    <h2 id="popupTitle">The gift he won big!</h2>
+    <p id="popupText"></p>
+    <button onclick="closePopup()" class="btn">Close</button>
+  </div>
+
+  <audio id="spinSound" src="/static/spin.mp3"></audio>
+
+  <script>
+    // *** REPLACE THESE WITH LEGAL PRIZES BEFORE LAUNCH ***
+    const PRIZES = [
+      "You won 2 grams of gift 🎁",
+      "You won 1 gram of gift 🎁",
+      "You won 3 gram of gift 🎁",
+      "You won 5 grams of hashish 🎁",
+      "You won 50 NIS gift 🎁",
+      "You won 100 NIS gift 🎁",
+      "Extra try later 🕒",
+      "You won a smoking extension gift 🎁",
+      "You won 10 grams of gift 🎁",
+      "You won nothing Yamanchus ❌"
+    ];
+
+    const canvas = document.getElementById('wheelCanvas');
+    const ctx = canvas.getContext('2d');
+    const size = 500;
+    const center = size/2;
+    const outerRadius = center - 10;
+    const segments = PRIZES.length;
+    const segmentAngle = (2*Math.PI)/segments;
+
+    function drawWheelStatic(){
+      for(let i=0;i<segments;i++){
+        const start = i*segmentAngle;
+        ctx.beginPath();
+        ctx.moveTo(center, center);
+        ctx.arc(center, center, outerRadius, start, start+segmentAngle);
+        ctx.closePath();
+        ctx.fillStyle = i%2===0 ? "#2f2f2f" : "#1a1a1a";
+        ctx.fill();
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(start + segmentAngle/2);
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 14px sans-serif";
+        ctx.fillText(PRIZES[i], outerRadius - 10, 6);
+        ctx.restore();
+      }
+      ctx.beginPath();
+      ctx.arc(center, center, 60, 0, Math.PI*2);
+      ctx.fillStyle = "#111";
+      ctx.fill();
+    }
+    drawWheelStatic();
+
+    let spinning = false;
+    const spinBtn = document.getElementById('spinBtn');
+    const spinSound = document.getElementById('spinSound');
+
+    const USER_ID = "{{ user_id }}";
+    const USERNAME = "{{ username }}";
+
+    function randomPrizeIndex() {
+      return Math.floor(Math.random()*segments);
+    }
+
+    function animateSpin(finalIndex) {
+      if(spinning) return;
+      spinning = true;
+      spinBtn.disabled = true;
+      try { spinSound.currentTime = 0; spinSound.play(); } catch(e){}
+
+      const spins = 3;
+      const finalAngle = (Math.PI*2)*spins + (segments - finalIndex) * segmentAngle + segmentAngle/2;
+      const duration = 6000;
+      const start = performance.now();
+
+      function step(now) {
+        const t = Math.min(1, (now - start)/duration);
+        const ease = 1 - Math.pow(1 - t, 3);
+        const angle = finalAngle * ease;
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.clearRect(0,0,size,size);
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(angle);
+        ctx.translate(-center, -center);
+        drawWheelStatic();
+        ctx.restore();
+
+        if(t < 1) requestAnimationFrame(step);
+        else {
+          spinning = false;
+          spinBtn.disabled = false;
+          try { spinSound.pause(); } catch(e){}
+          showResult(finalIndex);
+        }
+      }
+      requestAnimationFrame(step);
+    }
+
+    function showResult(index){
+      const prize = PRIZES[index];
+      document.getElementById('resultBox').style.display = 'block';
+      document.getElementById('resultBox').textContent = prize;
+      fetch('/result', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: USER_ID, username: USERNAME, prize })
+      }).then(()=>{
+        runConfetti();
+        document.getElementById('popupText').innerText = prize;
+        document.getElementById('popup').style.display = 'block';
+      }).catch(err=> console.error(err));
+    }
+
+    function closePopup(){ document.getElementById('popup').style.display='none'; }
+
+    spinBtn.addEventListener('click', function(){
+      const idx = randomPrizeIndex();
+      animateSpin(idx);
+    });
+
+    function runConfetti(){
+      const confettiCount = 60;
+      for(let i=0;i<confettiCount;i++){
+        const el = document.createElement('img');
+        el.src = '/static/leaf-small.png';
+        el.style.position = 'fixed';
+        el.style.left = (Math.random()*100) + '%';
+        el.style.top = '-10px';
+        el.style.width = (8 + Math.random()*22) + 'px';
+        el.style.opacity = 0.95;
+        el.style.transform = `rotate(${Math.random()*360}deg)`;
+        document.body.appendChild(el);
+        const duration = 2500 + Math.random()*2000;
+        el.animate([
+          { transform: el.style.transform, top: '-10px', opacity:1 },
+          { transform: `translateY(${600 + Math.random()*200}px) rotate(${Math.random()*720}deg)`, top: '100vh', opacity:0.9 }
+        ], { duration, easing:'cubic-bezier(.2,.8,.2,1)'});
+        setTimeout(()=> el.remove(), duration+200);
+      }
+    }
+  </script>
+</body>
+</html>
 
